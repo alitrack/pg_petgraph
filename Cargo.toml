@@ -1,0 +1,33 @@
+[package]
+name = "pg_petgraph"
+version = "0.1.0"
+edition = "2021"
+description = "PostgreSQL graph algorithm extension — PageRank, SCC, Betweenness Centrality"
+license = "MIT"
+repository = "https://github.com/alitrack/pg_petgraph"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = ["pg17"]
+pg17 = ["pgrx/pg17"]
+pg16 = ["pgrx/pg16"]
+pg15 = ["pgrx/pg15"]
+pg_test = []
+
+[dependencies]
+pgrx = { version = "0.13", default-features = false, features = ["pg17"] }
+petgraph = "0.7"
+
+[dev-dependencies]
+pgrx-tests = { version = "0.13", default-features = false, features = ["pg17"] }
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"
+opt-level = 3
+lto = "fat"
+codegen-units = 1

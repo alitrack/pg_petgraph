@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pg: [16]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-${{ matrix.pg }} postgresql-server-dev-${{ matrix.pg }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pgrx
+        run: cargo install cargo-pgrx --locked
+
+      - name: Init pgrx
+        run: cargo pgrx init --pg${{ matrix.pg }} $(which pg_config)
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Test
+        run: cargo pgrx test pg${{ matrix.pg }}
