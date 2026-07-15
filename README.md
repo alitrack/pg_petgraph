@@ -33,8 +33,7 @@ SELECT * FROM pagerank(
     ARRAY[1, 2, 3, 2, 4],  -- sources
     ARRAY[2, 3, 1, 4, 1],  -- targets
     damping => 0.85,
-    max_iter => 100,
-    tolerance => 1e-6
+    max_iter => 100
 );
 
 -- Strongly connected components
@@ -52,12 +51,28 @@ SELECT * FROM betweenness(
 
 ## Build
 
-Requires Rust 1.96+, pgrx, PostgreSQL development headers.
+Requires Rust 1.96+, pgrx, PostgreSQL 15-17 development headers.
 
 ```bash
-cargo pgrx init --pg16 /usr/lib/postgresql/16/bin/pg_config
-cargo pgrx run
+cargo pgrx init --pg17 /usr/bin/pg_config
+cargo build --release
+cargo pgrx run pg17   # interactive psql with extension loaded
 ```
+
+## Algorithms (planned)
+
+| Function | Status | Description |
+|----------|--------|-------------|
+| `pagerank` | ✅ | PageRank centrality |
+| `scc` | ✅ | Kosaraju strongly connected components |
+| `betweenness` | ✅ | Betweenness centrality (Brandes) |
+| `dijkstra` | 🔜 | Single-source shortest path |
+| `closeness` | 🔜 | Closeness centrality |
+| `toposort` | 🔜 | Topological sort |
+| `is_cyclic` | 🔜 | Cycle detection |
+| `connected_components` | 🔜 | Weakly/strongly connected components |
+| `eigenvector` | 🔜 | Eigenvector centrality |
+| `louvain` | 🔜 | Community detection |
 
 ## License
 
