@@ -67,12 +67,12 @@ cargo pgrx run pg17   # interactive psql with extension loaded
 | `scc` | ✅ | Kosaraju strongly connected components |
 | `betweenness` | ✅ | Betweenness centrality (Brandes) |
 | `dijkstra` | ✅ | Single-source shortest path |
-| `closeness` | 🔜 | Closeness centrality |
+| `connected_components` | ✅ | Weakly connected components |
 | `toposort` | ✅ | Topological sort |
 | `is_cyclic` | ✅ | Cycle detection |
-| `connected_components` | ✅ | Weakly connected components |
-| `eigenvector` | 🔜 | Eigenvector centrality |
-| `louvain` | 🔜 | Community detection |
+| `closeness` | ✅ | Closeness centrality |
+| `eigenvector` | ✅ | Eigenvector centrality |
+| `louvain` | ✅ | Louvain community detection |
 
 ## License
 

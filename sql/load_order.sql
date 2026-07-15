@@ -51,3 +51,26 @@ CREATE OR REPLACE FUNCTION connected_components(
     targets bigint[]
 ) RETURNS TABLE(node_id bigint, component_id bigint)
 STRICT LANGUAGE c AS 'MODULE_PATHNAME', 'connected_components_wrapper';
+
+-- Closeness centrality
+CREATE OR REPLACE FUNCTION closeness(
+    sources bigint[],
+    targets bigint[]
+) RETURNS TABLE(node_id bigint, centrality double precision)
+STRICT LANGUAGE c AS 'MODULE_PATHNAME', 'closeness_wrapper';
+
+-- Eigenvector centrality
+CREATE OR REPLACE FUNCTION eigenvector(
+    sources bigint[],
+    targets bigint[],
+    max_iter integer DEFAULT 100,
+    tolerance double precision DEFAULT 1e-6
+) RETURNS TABLE(node_id bigint, centrality double precision)
+STRICT LANGUAGE c AS 'MODULE_PATHNAME', 'eigenvector_wrapper';
+
+-- Louvain community detection
+CREATE OR REPLACE FUNCTION louvain(
+    sources bigint[],
+    targets bigint[]
+) RETURNS TABLE(node_id bigint, community_id bigint)
+STRICT LANGUAGE c AS 'MODULE_PATHNAME', 'louvain_wrapper';

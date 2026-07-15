@@ -380,6 +380,312 @@ fn connected_components(
     TableIterator::new(results)
 }
 
+// ── Closeness Centrality ────────────────────────────────────────────
+
+/// Closeness centrality via BFS (unweighted).
+fn closeness_centrality(graph: &DiGraph<i64, f64>) -> HashMap<NodeIndex, f64> {
+    let n = graph.node_count();
+    if n <= 1 {
+        return graph.node_indices().map(|v| (v, 0.0)).collect();
+    }
+
+    let mut closeness: HashMap<NodeIndex, f64> = HashMap::new();
+
+    for start in graph.node_indices() {
+        let mut dist: HashMap<NodeIndex, usize> = HashMap::new();
+        let mut queue = VecDeque::new();
+        dist.insert(start, 0);
+        queue.push_back(start);
+
+        while let Some(v) = queue.pop_front() {
+            let dv = *dist.get(&v).unwrap_or(&0);
+            for w in graph.neighbors(v) {
+                if !dist.contains_key(&w) {
+                    dist.insert(w, dv + 1);
+                    queue.push_back(w);
+                }
+            }
+        }
+
+        let sum: usize = dist.values().sum();
+        let reachable = dist.len();
+
+        if reachable > 1 && sum > 0 {
+            // Wasserman-Faust normalization for directed: (reachable-1)² / ((n-1) * sum)
+            let c = (reachable - 1) as f64 * (reachable - 1) as f64 / ((n - 1) as f64 * sum as f64);
+            closeness.insert(start, c);
+        } else {
+            closeness.insert(start, 0.0);
+        }
+    }
+
+    closeness
+}
+
+#[pg_extern]
+fn closeness(
+    sources: pgrx::Array<i64>,
+    targets: pgrx::Array<i64>,
+) -> TableIterator<'static, (name!(node_id, i64), name!(centrality, f64))> {
+    let srcs = sources.iter().map(|s| s.unwrap_or(0)).collect::<Vec<_>>();
+    let tgts = targets.iter().map(|t| t.unwrap_or(0)).collect::<Vec<_>>();
+
+    if srcs.len() != tgts.len() {
+        pgrx::error!("sources and targets arrays must have the same length");
+    }
+
+    let (graph, node_map) = build_graph(&srcs, &tgts);
+    let idx_to_id: HashMap<NodeIndex, i64> = node_map.iter().map(|(id, idx)| (*idx, *id)).collect();
+
+    let centrality = closeness_centrality(&graph);
+
+    let mut results: Vec<(i64, f64)> = centrality
+        .iter()
+        .map(|(node, &score)| {
+            let node_id = idx_to_id.get(node).copied().unwrap_or(0);
+            (node_id, score)
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    TableIterator::new(results)
+}
+
+// ── Eigenvector Centrality ──────────────────────────────────────────
+
+/// Power iteration for eigenvector centrality.
+fn eigenvector_centrality(
+    graph: &DiGraph<i64, f64>,
+    max_iter: usize,
+    tolerance: f64,
+) -> HashMap<NodeIndex, f64> {
+    let n = graph.node_count();
+    if n == 0 {
+        return HashMap::new();
+    }
+
+    let idx_to_node: Vec<NodeIndex> = graph.node_indices().collect();
+    let mut x: Vec<f64> = vec![1.0; n];
+
+    for _ in 0..max_iter {
+        let mut x_new = vec![0.0; n];
+
+        // x_new = A * x  (adjacency multiplication)
+        for (i, node) in idx_to_node.iter().enumerate() {
+            for neighbor in graph.neighbors(*node) {
+                x_new[i] += x[neighbor.index()];
+            }
+        }
+
+        // Normalize (L2 norm)
+        let norm: f64 = x_new.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if norm < 1e-15 {
+            break;
+        }
+        for v in x_new.iter_mut() {
+            *v /= norm;
+        }
+
+        // Check convergence
+        let diff: f64 = x.iter().zip(x_new.iter()).map(|(a, b)| (a - b).abs()).sum();
+        x = x_new;
+
+        if diff < tolerance {
+            break;
+        }
+    }
+
+    let max_val = x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let min_val = x.iter().cloned().fold(f64::INFINITY, f64::min);
+
+    let mut result = HashMap::new();
+    for (i, &val) in x.iter().enumerate() {
+        let normalized = if (max_val - min_val).abs() > 1e-10 {
+            (val - min_val) / (max_val - min_val)
+        } else {
+            val
+        };
+        result.insert(idx_to_node[i], normalized);
+    }
+
+    result
+}
+
+#[pg_extern]
+fn eigenvector(
+    sources: pgrx::Array<i64>,
+    targets: pgrx::Array<i64>,
+    max_iter: default!(i32, "100"),
+    tolerance: default!(f64, "1e-6"),
+) -> TableIterator<'static, (name!(node_id, i64), name!(centrality, f64))> {
+    let srcs = sources.iter().map(|s| s.unwrap_or(0)).collect::<Vec<_>>();
+    let tgts = targets.iter().map(|t| t.unwrap_or(0)).collect::<Vec<_>>();
+
+    if srcs.len() != tgts.len() {
+        pgrx::error!("sources and targets arrays must have the same length");
+    }
+
+    let (graph, node_map) = build_graph(&srcs, &tgts);
+    let idx_to_id: HashMap<NodeIndex, i64> = node_map.iter().map(|(id, idx)| (*idx, *id)).collect();
+
+    let centrality = eigenvector_centrality(&graph, max_iter as usize, tolerance);
+
+    let mut results: Vec<(i64, f64)> = centrality
+        .iter()
+        .map(|(node, &score)| {
+            let node_id = idx_to_id.get(node).copied().unwrap_or(0);
+            (node_id, score)
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    TableIterator::new(results)
+}
+
+// ── Louvain Community Detection ─────────────────────────────────────
+
+/// Louvain method for community detection.
+/// Returns (node_id, community_id) pairs.
+fn louvain_community(graph: &DiGraph<i64, f64>) -> Vec<(NodeIndex, usize)> {
+    let n = graph.node_count();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let m: f64 = graph.edge_count() as f64;
+    if m < 1.0 {
+        // Each node in its own community
+        return graph.node_indices().map(|v| (v, v.index())).collect();
+    }
+
+    let idx_to_node: Vec<NodeIndex> = graph.node_indices().collect();
+    let node_to_idx: HashMap<NodeIndex, usize> = idx_to_node
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (*n, i))
+        .collect();
+
+    // Build adjacency: for each node, list of (neighbor_idx, weight)
+    let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+    for (i, node) in idx_to_node.iter().enumerate() {
+        for neighbor in graph.neighbors(*node) {
+            if let Some(&ni) = node_to_idx.get(&neighbor) {
+                // Use 1.0 weight for unweighted; sum parallel edges
+                adj[i].push((ni, 1.0));
+            }
+        }
+    }
+
+    // Initialize each node in its own community
+    let mut community: Vec<usize> = (0..n).collect();
+    let mut improved = true;
+    let max_passes = 20;
+
+    for _pass in 0..max_passes {
+        if !improved {
+            break;
+        }
+        improved = false;
+
+        // Compute total weight of each community
+        let mut comm_total: Vec<f64> = vec![0.0; n];
+        for (i, neighbors) in adj.iter().enumerate() {
+            for &(_j, w) in neighbors {
+                comm_total[community[i]] += w;
+            }
+        }
+
+        for i in 0..n {
+            let old_comm = community[i];
+
+            // Compute weight to each neighboring community
+            let mut comm_weight: HashMap<usize, f64> = HashMap::new();
+            let mut ki = 0.0f64;
+
+            for &(j, w) in &adj[i] {
+                ki += w;
+                *comm_weight.entry(community[j]).or_insert(0.0) += w;
+            }
+
+            if ki == 0.0 {
+                continue;
+            }
+
+            // Compute modularity gain for moving to each candidate community
+            let mut best_comm = old_comm;
+            let mut best_delta = 0.0f64;
+            let k_i_over_2m = ki / (2.0 * m);
+
+            for (&target_comm, &w_to_comm) in &comm_weight {
+                if target_comm == old_comm {
+                    continue;
+                }
+                let sigma_tot = comm_total[target_comm];
+                let delta = (w_to_comm / m) - 2.0 * (sigma_tot / (2.0 * m)) * k_i_over_2m * 2.0;
+
+                if delta > best_delta {
+                    best_delta = delta;
+                    best_comm = target_comm;
+                }
+            }
+
+            // Also consider: modularity loss from leaving old community
+            if best_comm != old_comm {
+                community[i] = best_comm;
+                improved = true;
+            }
+        }
+    }
+
+    // Compact community IDs to be sequential
+    let mut comm_map: HashMap<usize, usize> = HashMap::new();
+    let mut next_id = 0usize;
+    let mut results = Vec::with_capacity(n);
+
+    for (i, &comm) in community.iter().enumerate() {
+        let compact = *comm_map.entry(comm).or_insert_with(|| {
+            let id = next_id;
+            next_id += 1;
+            id
+        });
+        results.push((idx_to_node[i], compact));
+    }
+
+    results
+}
+
+#[pg_extern]
+fn louvain(
+    sources: pgrx::Array<i64>,
+    targets: pgrx::Array<i64>,
+) -> TableIterator<'static, (name!(node_id, i64), name!(community_id, i64))> {
+    let srcs = sources.iter().map(|s| s.unwrap_or(0)).collect::<Vec<_>>();
+    let tgts = targets.iter().map(|t| t.unwrap_or(0)).collect::<Vec<_>>();
+
+    if srcs.len() != tgts.len() {
+        pgrx::error!("sources and targets arrays must have the same length");
+    }
+
+    let (graph, node_map) = build_graph(&srcs, &tgts);
+    let idx_to_id: HashMap<NodeIndex, i64> = node_map.iter().map(|(id, idx)| (*idx, *id)).collect();
+
+    let communities = louvain_community(&graph);
+
+    let mut results: Vec<(i64, i64)> = communities
+        .iter()
+        .map(|(node, comm)| {
+            let node_id = idx_to_id.get(node).copied().unwrap_or(0);
+            (node_id, *comm as i64)
+        })
+        .collect();
+
+    results.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+
+    TableIterator::new(results)
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(any(test, feature = "pg_test"))]
