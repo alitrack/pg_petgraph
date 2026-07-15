@@ -208,6 +208,178 @@ fn betweenness(
     TableIterator::new(results)
 }
 
+// ── Dijkstra ────────────────────────────────────────────────────────
+
+#[pg_extern]
+fn dijkstra(
+    sources: pgrx::Array<i64>,
+    targets: pgrx::Array<i64>,
+    start_node: i64,
+) -> TableIterator<'static, (name!(node_id, i64), name!(distance, f64))> {
+    let srcs = sources.iter().map(|s| s.unwrap_or(0)).collect::<Vec<_>>();
+    let tgts = targets.iter().map(|t| t.unwrap_or(0)).collect::<Vec<_>>();
+
+    if srcs.len() != tgts.len() {
+        pgrx::error!("sources and targets arrays must have the same length");
+    }
+
+    let (graph, node_map) = build_graph(&srcs, &tgts);
+
+    let start = match node_map.get(&start_node) {
+        Some(n) => *n,
+        None => pgrx::error!("start node {} not found in graph", start_node),
+    };
+
+    let idx_to_id: HashMap<NodeIndex, i64> = node_map.iter().map(|(id, idx)| (*idx, *id)).collect();
+
+    let distances = algo::dijkstra(&graph, start, None, |e| *e.weight());
+
+    let mut results: Vec<(i64, f64)> = distances
+        .iter()
+        .map(|(node, &dist)| {
+            let node_id = idx_to_id.get(node).copied().unwrap_or(0);
+            (node_id, dist)
+        })
+        .collect();
+
+    results.sort_by_key(|(id, _)| *id);
+
+    TableIterator::new(results)
+}
+
+// ── Topological Sort ────────────────────────────────────────────────
+
+#[pg_extern]
+fn toposort(
+    sources: pgrx::Array<i64>,
+    targets: pgrx::Array<i64>,
+) -> TableIterator<'static, (name!(position, i32), name!(node_id, i64))> {
+    let srcs = sources.iter().map(|s| s.unwrap_or(0)).collect::<Vec<_>>();
+    let tgts = targets.iter().map(|t| t.unwrap_or(0)).collect::<Vec<_>>();
+
+    if srcs.len() != tgts.len() {
+        pgrx::error!("sources and targets arrays must have the same length");
+    }
+
+    let (graph, node_map) = build_graph(&srcs, &tgts);
+
+    let idx_to_id: HashMap<NodeIndex, i64> = node_map.iter().map(|(id, idx)| (*idx, *id)).collect();
+
+    match algo::toposort(&graph, None) {
+        Ok(order) => {
+            let results: Vec<(i32, i64)> = order
+                .iter()
+                .enumerate()
+                .map(|(pos, node)| {
+                    let node_id = idx_to_id.get(node).copied().unwrap_or(0);
+                    (pos as i32, node_id)
+                })
+                .collect();
+            TableIterator::new(results)
+        }
+        Err(cycle) => {
+            let node_id = idx_to_id.get(&cycle.node_id()).copied().unwrap_or(0);
+            pgrx::error!("graph contains a cycle involving node {}", node_id);
+        }
+    }
+}
+
+// ── Cycle Detection ─────────────────────────────────────────────────
+
+#[pg_extern]
+fn is_cyclic(sources: pgrx::Array<i64>, targets: pgrx::Array<i64>) -> bool {
+    let srcs = sources.iter().map(|s| s.unwrap_or(0)).collect::<Vec<_>>();
+    let tgts = targets.iter().map(|t| t.unwrap_or(0)).collect::<Vec<_>>();
+
+    if srcs.len() != tgts.len() {
+        pgrx::error!("sources and targets arrays must have the same length");
+    }
+
+    let (graph, _node_map) = build_graph(&srcs, &tgts);
+
+    algo::is_cyclic_directed(&graph)
+}
+
+// ── Connected Components (weakly) ───────────────────────────────────
+
+/// BFS on undirected view of the graph: ignores edge direction.
+fn weakly_connected_components(graph: &DiGraph<i64, f64>) -> Vec<Vec<NodeIndex>> {
+    let mut visited = vec![false; graph.node_count()];
+    let mut components = Vec::new();
+
+    let idx_to_node: Vec<NodeIndex> = graph.node_indices().collect();
+
+    for start_idx in 0..graph.node_count() {
+        if visited[start_idx] {
+            continue;
+        }
+
+        let start = idx_to_node[start_idx];
+        let mut component = Vec::new();
+        let mut queue = VecDeque::new();
+
+        visited[start_idx] = true;
+        queue.push_back(start);
+
+        while let Some(v) = queue.pop_front() {
+            component.push(v);
+
+            // Follow outgoing edges
+            for w in graph.neighbors(v) {
+                let wi = w.index();
+                if !visited[wi] {
+                    visited[wi] = true;
+                    queue.push_back(w);
+                }
+            }
+
+            // Follow incoming edges (neighbors_directed with Incoming)
+            use petgraph::Direction;
+            for w in graph.neighbors_directed(v, Direction::Incoming) {
+                let wi = w.index();
+                if !visited[wi] {
+                    visited[wi] = true;
+                    queue.push_back(w);
+                }
+            }
+        }
+
+        components.push(component);
+    }
+
+    components
+}
+
+#[pg_extern]
+fn connected_components(
+    sources: pgrx::Array<i64>,
+    targets: pgrx::Array<i64>,
+) -> TableIterator<'static, (name!(node_id, i64), name!(component_id, i64))> {
+    let srcs = sources.iter().map(|s| s.unwrap_or(0)).collect::<Vec<_>>();
+    let tgts = targets.iter().map(|t| t.unwrap_or(0)).collect::<Vec<_>>();
+
+    if srcs.len() != tgts.len() {
+        pgrx::error!("sources and targets arrays must have the same length");
+    }
+
+    let (graph, node_map) = build_graph(&srcs, &tgts);
+    let idx_to_id: HashMap<NodeIndex, i64> = node_map.iter().map(|(id, idx)| (*idx, *id)).collect();
+
+    let components = weakly_connected_components(&graph);
+
+    let mut results = Vec::new();
+    for (comp_id, component) in components.iter().enumerate() {
+        for node in component {
+            let node_id = idx_to_id.get(node).copied().unwrap_or(0);
+            results.push((node_id, comp_id as i64));
+        }
+    }
+
+    results.sort_by_key(|(id, _)| *id);
+
+    TableIterator::new(results)
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(any(test, feature = "pg_test"))]
