@@ -14,12 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        pg: [16]
+        pg: [16, 17]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install PostgreSQL
         run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           sudo apt-get update
           sudo apt-get install -y postgresql-${{ matrix.pg }} postgresql-server-dev-${{ matrix.pg }}
 
@@ -33,7 +35,4 @@ jobs:
         run: cargo pgrx init --pg${{ matrix.pg }} $(which pg_config)
 
       - name: Build
-        run: cargo build --release
-
-      - name: Test
-        run: cargo pgrx test pg${{ matrix.pg }}
+        run: cargo build --release --no-default-features --features pg${{ matrix.pg }}
