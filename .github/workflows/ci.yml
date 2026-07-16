@@ -44,7 +44,7 @@ jobs:
             rust-cache-${{ matrix.pg }}-
 
       - name: Install pgrx
-        run: cargo pgrx --version 2>/dev/null || cargo install cargo-pgrx --locked
+        run: cargo install cargo-pgrx --version 0.13.1 --locked --force
 
       - name: Init pgrx
         run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
