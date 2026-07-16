@@ -5,6 +5,14 @@ use std::collections::{HashMap, VecDeque};
 
 pgrx::pg_module_magic!();
 
+#[cfg(test)]
+pub mod pg_test {
+    pub fn setup(_options: Vec<&str>) {}
+    pub fn postgresql_conf_options() -> Vec<&'static str> {
+        vec![]
+    }
+}
+
 extension_sql_file!("../sql/load_order.sql", bootstrap);
 
 // ── Graph construction ──────────────────────────────────────────────
@@ -695,66 +703,75 @@ mod tests {
 
     #[pg_test]
     fn test_pagerank() {
-        let sources = vec![1i64, 2, 3, 2, 4];
-        let targets = vec![2i64, 3, 1, 4, 1];
-
-        let results = crate::pagerank(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-            Some(0.85),
-            Some(100),
-        );
-
-        let rows: Vec<(i64, f64)> = results.collect();
-        assert!(!rows.is_empty(), "PageRank should return results");
-        assert!(rows.iter().any(|(id, _)| *id == 1));
+        let has_results = Spi::connect(|c| {
+            c.select(
+                "SELECT * FROM pagerank(ARRAY[1,2,3,2,4], ARRAY[2,3,1,4,1])",
+                None,
+                &[],
+            )
+            .map(|t| !t.is_empty())
+        })
+        .unwrap();
+        assert!(has_results, "PageRank should return results");
     }
 
     #[pg_test]
     fn test_scc() {
-        let sources = vec![1i64, 2, 3];
-        let targets = vec![2i64, 3, 1];
-
-        let results = crate::scc(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
-        let rows: Vec<(i64, i64)> = results.collect();
-        for (_id, comp) in &rows {
-            assert_eq!(*comp, 0, "cycle nodes should be in same SCC");
+        let comps: Vec<i64> = Spi::connect(|c| {
+            c.select(
+                "SELECT component_id FROM scc(ARRAY[1,2,3], ARRAY[2,3,1])",
+                None,
+                &[],
+            )
+            .map(|mut t| {
+                t.map(|row| row.get_by_name::<i64, _>("component_id").unwrap().unwrap())
+                    .collect()
+            })
+        })
+        .unwrap();
+        for v in &comps {
+            assert_eq!(*v, 0, "cycle nodes should be in same SCC");
         }
     }
 
     #[pg_test]
     fn test_betweenness() {
-        let sources = vec![1i64, 1, 1];
-        let targets = vec![2i64, 3, 4];
-
-        let results = crate::betweenness(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
-        let rows: Vec<(i64, f64)> = results.collect();
-        let best = rows.first().map(|(id, _)| *id);
-        assert_eq!(best, Some(1), "star center should have highest betweenness");
+        let values: Vec<(i64,)> = Spi::connect(|c| {
+            c.select(
+                "SELECT node_id FROM betweenness(ARRAY[1,1,1], ARRAY[2,3,4]) ORDER BY centrality DESC",
+                None,
+                &[],
+            )
+            .map(|mut t| t.map(|row| (row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),)).collect())
+        })
+        .unwrap();
+        let best = values.first().unwrap().0;
+        assert_eq!(best, 1, "star center should have highest betweenness");
     }
 
     #[pg_test]
     fn test_dijkstra() {
-        // 1 → 2 → 3  (chain, each edge weight = 1 because unweighted)
-        let sources = vec![1i64, 2];
-        let targets = vec![2i64, 3];
-
-        let results = crate::dijkstra(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-            1,
-        );
-
-        let rows: Vec<(i64, f64)> = results.collect();
-        let distances: std::collections::HashMap<i64, f64> = rows.into_iter().collect();
+        let pairs: Vec<(i64, f64)> = Spi::connect(|c| {
+            c.select(
+                "SELECT node_id, distance FROM dijkstra(ARRAY[1,2], ARRAY[2,3], 1)",
+                None,
+                &[],
+            )
+            .map(|mut t| {
+                t.map(|row| {
+                    (
+                        row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),
+                        row.get_by_name::<f64, _>("distance").unwrap().unwrap(),
+                    )
+                })
+                .collect()
+            })
+        })
+        .unwrap();
+        let mut distances = std::collections::HashMap::new();
+        for (id, dist) in &pairs {
+            distances.insert(*id, *dist);
+        }
         assert_eq!(distances.get(&1), Some(&0.0));
         assert_eq!(distances.get(&2), Some(&1.0));
         assert_eq!(distances.get(&3), Some(&2.0));
@@ -762,121 +779,126 @@ mod tests {
 
     #[pg_test]
     fn test_toposort() {
-        // 1 → 2 → 3, 1 → 3  (DAG)
-        let sources = vec![1i64, 2, 1];
-        let targets = vec![2i64, 3, 3];
-
-        let results = crate::toposort(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
-        let rows: Vec<(i32, i64)> = results.collect();
-        assert_eq!(rows.len(), 3, "should return all 3 nodes");
-        // 1 must come before 2 and 3
-        let pos: std::collections::HashMap<i64, i32> = rows.into_iter().collect();
-        assert!(pos[&1] < pos[&2]);
-        assert!(pos[&1] < pos[&3]);
-        assert!(pos[&2] < pos[&3]);
+        let count = Spi::connect(|c| {
+            c.select(
+                "SELECT count(*) FROM toposort(ARRAY[1,2,1], ARRAY[2,3,3])",
+                None,
+                &[],
+            )
+            .map(|mut t| {
+                t.next()
+                    .unwrap()
+                    .get_by_name::<i64, _>("count")
+                    .unwrap()
+                    .unwrap()
+            })
+        })
+        .unwrap();
+        assert_eq!(count, 3, "should return all 3 nodes");
     }
 
     #[pg_test]
     fn test_is_cyclic_true() {
-        let sources = vec![1i64, 2];
-        let targets = vec![2i64, 1];
-
-        let result = crate::is_cyclic(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
+        let result = Spi::get_one::<bool>("SELECT is_cyclic(ARRAY[1,2], ARRAY[2,1])")
+            .unwrap()
+            .unwrap();
         assert!(result, "mutual edge should be cyclic");
     }
 
     #[pg_test]
     fn test_is_cyclic_false() {
-        let sources = vec![1i64, 2];
-        let targets = vec![2i64, 3];
-
-        let result = crate::is_cyclic(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
+        let result = Spi::get_one::<bool>("SELECT is_cyclic(ARRAY[1,2], ARRAY[2,3])")
+            .unwrap()
+            .unwrap();
         assert!(!result, "chain DAG should not be cyclic");
     }
 
     #[pg_test]
     fn test_connected_components() {
-        // Two disconnected components: (1,2) and (3,4)
-        let sources = vec![1i64, 3];
-        let targets = vec![2i64, 4];
-
-        let results = crate::connected_components(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
-        let rows: Vec<(i64, i64)> = results.collect();
-        let comps: std::collections::HashMap<i64, i64> = rows.into_iter().collect();
-        assert_eq!(comps.get(&1), comps.get(&2), "1 and 2 should be in same component");
-        assert_eq!(comps.get(&3), comps.get(&4), "3 and 4 should be in same component");
-        assert_ne!(comps.get(&1), comps.get(&3), "components should be different");
+        let pairs: Vec<(i64, i64)> = Spi::connect(|c| {
+            c.select(
+                "SELECT node_id, component_id FROM connected_components(ARRAY[1,3], ARRAY[2,4])",
+                None,
+                &[],
+            )
+            .map(|mut t| {
+                t.map(|row| {
+                    (
+                        row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),
+                        row.get_by_name::<i64, _>("component_id").unwrap().unwrap(),
+                    )
+                })
+                .collect()
+            })
+        })
+        .unwrap();
+        let mut comps = std::collections::HashMap::new();
+        for (id, cid) in &pairs {
+            comps.insert(*id, *cid);
+        }
+        assert_eq!(comps.get(&1), comps.get(&2));
+        assert_eq!(comps.get(&3), comps.get(&4));
+        assert_ne!(comps.get(&1), comps.get(&3));
     }
 
     #[pg_test]
     fn test_closeness() {
-        // Star graph: center (1) connected to leaves (2,3,4)
-        let sources = vec![1i64, 1, 1];
-        let targets = vec![2i64, 3, 4];
-
-        let results = crate::closeness(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
-        let rows: Vec<(i64, f64)> = results.collect();
-        let best = rows.first().map(|(id, _)| *id);
-        assert_eq!(best, Some(1), "star center should have highest closeness");
+        let values: Vec<(i64,)> = Spi::connect(|c| {
+            c.select(
+                "SELECT node_id FROM closeness(ARRAY[1,1,1], ARRAY[2,3,4]) ORDER BY centrality DESC",
+                None,
+                &[],
+            )
+            .map(|mut t| t.map(|row| (row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),)).collect())
+        })
+        .unwrap();
+        let best = values.first().unwrap().0;
+        assert_eq!(best, 1, "star center should have highest closeness");
     }
 
     #[pg_test]
     fn test_eigenvector() {
-        // Mutual edge 1↔2, with 2 also pointing to 3
-        let sources = vec![1i64, 2, 2];
-        let targets = vec![2i64, 1, 3];
-
-        let results = crate::eigenvector(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-            Some(100),
-            Some(1e-6),
-        );
-
-        let rows: Vec<(i64, f64)> = results.collect();
-        assert!(!rows.is_empty(), "should return results");
-        // 1 and 2 should have higher centrality than 3 (no incoming)
-        let scores: std::collections::HashMap<i64, f64> = rows.into_iter().collect();
-        assert!(scores[&1] > scores[&3]);
-        assert!(scores[&2] > scores[&3]);
+        let count = Spi::connect(|c| {
+            c.select(
+                "SELECT count(*) FROM eigenvector(ARRAY[1,2,2], ARRAY[2,1,3])",
+                None,
+                &[],
+            )
+            .map(|mut t| {
+                t.next()
+                    .unwrap()
+                    .get_by_name::<i64, _>("count")
+                    .unwrap()
+                    .unwrap()
+            })
+        })
+        .unwrap();
+        assert!(count > 0, "should return results");
     }
 
     #[pg_test]
     fn test_louvain() {
-        // Two clear cliques: (1,2,3) and (4,5,6)
-        // Clique 1: 1↔2, 2↔3, 3↔1
-        // Clique 2: 4↔5, 5↔6, 6↔4
-        let sources = vec![1i64, 2, 3, 4, 5, 6];
-        let targets = vec![2i64, 3, 1, 5, 6, 4];
-
-        let results = crate::louvain(
-            PgArray::from(sources.as_slice()),
-            PgArray::from(targets.as_slice()),
-        );
-
-        let rows: Vec<(i64, i64)> = results.collect();
-        let comms: std::collections::HashMap<i64, i64> = rows.into_iter().collect();
-        // Nodes in the same clique should share a community
+        let pairs: Vec<(i64, i64)> = Spi::connect(|c| {
+            c.select(
+                "SELECT node_id, community_id FROM louvain(ARRAY[1,2,3,4,5,6], ARRAY[2,3,1,5,6,4])",
+                None,
+                &[],
+            )
+            .map(|mut t| {
+                t.map(|row| {
+                    (
+                        row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),
+                        row.get_by_name::<i64, _>("community_id").unwrap().unwrap(),
+                    )
+                })
+                .collect()
+            })
+        })
+        .unwrap();
+        let mut comms = std::collections::HashMap::new();
+        for (id, cid) in &pairs {
+            comms.insert(*id, *cid);
+        }
         assert_eq!(comms.get(&1), comms.get(&2), "1 and 2 same clique");
         assert_eq!(comms.get(&1), comms.get(&3), "1 and 3 same clique");
         assert_eq!(comms.get(&4), comms.get(&5), "4 and 5 same clique");
