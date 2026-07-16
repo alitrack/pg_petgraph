@@ -11,11 +11,10 @@ env:
   CARGO_BUILD_JOBS: 1
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        pg: [16, 17]
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -26,61 +25,32 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Install PostgreSQL
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pgrx
+        run: cargo pgrx --version 2>/dev/null || cargo install cargo-pgrx --locked
+
+      - name: Build PG16
         run: |
           sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           sudo apt-get update
-          sudo apt-get install -y postgresql-${{ matrix.pg }} postgresql-server-dev-${{ matrix.pg }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: release-cache-${{ matrix.pg }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/**/*.rs') }}
-          restore-keys: |
-            release-cache-${{ matrix.pg }}-
-
-      - name: Install pgrx
-        run: cargo install cargo-pgrx --locked
-
-      - name: Init pgrx
-        run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
-
-      - name: Build release
-        run: cargo build --release --no-default-features --features pg${{ matrix.pg }}
-
-      - name: Rename artifact
-        run: |
+          sudo apt-get install -y postgresql-16 postgresql-server-dev-16
+          cargo pgrx init --pg16 /usr/lib/postgresql/16/bin/pg_config
+          cargo build --release --no-default-features --features pg16
           mkdir -p artifacts
-          cp target/release/libpg_petgraph.so \
-             artifacts/pg_petgraph-pg${{ matrix.pg }}-v${{ steps.version.outputs.version }}-linux-x86_64.so
+          cp target/release/libpg_petgraph.so artifacts/pg_petgraph-pg16-v${{ steps.version.outputs.version }}-linux-x86_64.so
+          # Clean build artifacts to save space
+          cargo clean
+          rm -rf ~/.pgrx
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pg_petgraph-pg${{ matrix.pg }}
-          path: artifacts/
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: pg_petgraph-pg*
-          path: artifacts/
-          merge-multiple: true
+      - name: Build PG17
+        run: |
+          sudo apt-get install -y postgresql-17 postgresql-server-dev-17
+          cargo pgrx init --pg17 /usr/lib/postgresql/17/bin/pg_config
+          cargo build --release --no-default-features --features pg17
+          cp target/release/libpg_petgraph.so artifacts/pg_petgraph-pg17-v${{ steps.version.outputs.version }}-linux-x86_64.so
 
       - name: Create release
         uses: softprops/action-gh-release@v2
