@@ -11,20 +11,17 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["pg17"]
-pg17 = ["pgrx/pg17"]
-pg16 = ["pgrx/pg16"]
-pg15 = ["pgrx/pg15"]
+pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
+pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
+pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
 pg_test = []
 
 [dependencies]
-pgrx = { version = "0.13", default-features = false, features = ["pg17"] }
+pgrx = { version = "0.13", default-features = false }
 petgraph = "0.7"
 
 [dev-dependencies]
-pgrx-tests = { version = "0.13", default-features = false, features = ["pg17"] }
-
-[profile.dev]
-panic = "unwind"
+pgrx-tests = { version = "0.13", default-features = false }
 
 [profile.release]
 panic = "unwind"
