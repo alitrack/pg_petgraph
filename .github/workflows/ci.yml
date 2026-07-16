@@ -8,8 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-  RUSTFLAGS: "-C debuginfo=0"
+  CARGO_NET_RETRY: 10
+  CARGO_BUILD_JOBS: 1
 
 jobs:
   build:
@@ -39,10 +39,9 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: rust-cache-${{ matrix.pg }}-${{ hashFiles('Cargo.toml', 'src/**/*.rs') }}
+          key: rust-cache-${{ matrix.pg }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/**/*.rs') }}
           restore-keys: |
             rust-cache-${{ matrix.pg }}-
-            rust-cache-
 
       - name: Install pgrx
         run: cargo install cargo-pgrx --locked
@@ -51,4 +50,4 @@ jobs:
         run: cargo pgrx init --pg${{ matrix.pg }} $(which pg_config)
 
       - name: Build
-        run: cargo build --no-default-features --features pg${{ matrix.pg }}
+        run: cargo build --profile ci --no-default-features --features pg${{ matrix.pg }}
