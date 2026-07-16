@@ -740,4 +740,146 @@ mod tests {
         let best = rows.first().map(|(id, _)| *id);
         assert_eq!(best, Some(1), "star center should have highest betweenness");
     }
+
+    #[pg_test]
+    fn test_dijkstra() {
+        // 1 → 2 → 3  (chain, each edge weight = 1 because unweighted)
+        let sources = vec![1i64, 2];
+        let targets = vec![2i64, 3];
+
+        let results = crate::dijkstra(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+            1,
+        );
+
+        let rows: Vec<(i64, f64)> = results.collect();
+        let distances: std::collections::HashMap<i64, f64> = rows.into_iter().collect();
+        assert_eq!(distances.get(&1), Some(&0.0));
+        assert_eq!(distances.get(&2), Some(&1.0));
+        assert_eq!(distances.get(&3), Some(&2.0));
+    }
+
+    #[pg_test]
+    fn test_toposort() {
+        // 1 → 2 → 3, 1 → 3  (DAG)
+        let sources = vec![1i64, 2, 1];
+        let targets = vec![2i64, 3, 3];
+
+        let results = crate::toposort(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+        );
+
+        let rows: Vec<(i32, i64)> = results.collect();
+        assert_eq!(rows.len(), 3, "should return all 3 nodes");
+        // 1 must come before 2 and 3
+        let pos: std::collections::HashMap<i64, i32> = rows.into_iter().collect();
+        assert!(pos[&1] < pos[&2]);
+        assert!(pos[&1] < pos[&3]);
+        assert!(pos[&2] < pos[&3]);
+    }
+
+    #[pg_test]
+    fn test_is_cyclic_true() {
+        let sources = vec![1i64, 2];
+        let targets = vec![2i64, 1];
+
+        let result = crate::is_cyclic(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+        );
+
+        assert!(result, "mutual edge should be cyclic");
+    }
+
+    #[pg_test]
+    fn test_is_cyclic_false() {
+        let sources = vec![1i64, 2];
+        let targets = vec![2i64, 3];
+
+        let result = crate::is_cyclic(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+        );
+
+        assert!(!result, "chain DAG should not be cyclic");
+    }
+
+    #[pg_test]
+    fn test_connected_components() {
+        // Two disconnected components: (1,2) and (3,4)
+        let sources = vec![1i64, 3];
+        let targets = vec![2i64, 4];
+
+        let results = crate::connected_components(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+        );
+
+        let rows: Vec<(i64, i64)> = results.collect();
+        let comps: std::collections::HashMap<i64, i64> = rows.into_iter().collect();
+        assert_eq!(comps.get(&1), comps.get(&2), "1 and 2 should be in same component");
+        assert_eq!(comps.get(&3), comps.get(&4), "3 and 4 should be in same component");
+        assert_ne!(comps.get(&1), comps.get(&3), "components should be different");
+    }
+
+    #[pg_test]
+    fn test_closeness() {
+        // Star graph: center (1) connected to leaves (2,3,4)
+        let sources = vec![1i64, 1, 1];
+        let targets = vec![2i64, 3, 4];
+
+        let results = crate::closeness(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+        );
+
+        let rows: Vec<(i64, f64)> = results.collect();
+        let best = rows.first().map(|(id, _)| *id);
+        assert_eq!(best, Some(1), "star center should have highest closeness");
+    }
+
+    #[pg_test]
+    fn test_eigenvector() {
+        // Mutual edge 1↔2, with 2 also pointing to 3
+        let sources = vec![1i64, 2, 2];
+        let targets = vec![2i64, 1, 3];
+
+        let results = crate::eigenvector(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+            Some(100),
+            Some(1e-6),
+        );
+
+        let rows: Vec<(i64, f64)> = results.collect();
+        assert!(!rows.is_empty(), "should return results");
+        // 1 and 2 should have higher centrality than 3 (no incoming)
+        let scores: std::collections::HashMap<i64, f64> = rows.into_iter().collect();
+        assert!(scores[&1] > scores[&3]);
+        assert!(scores[&2] > scores[&3]);
+    }
+
+    #[pg_test]
+    fn test_louvain() {
+        // Two clear cliques: (1,2,3) and (4,5,6)
+        // Clique 1: 1↔2, 2↔3, 3↔1
+        // Clique 2: 4↔5, 5↔6, 6↔4
+        let sources = vec![1i64, 2, 3, 4, 5, 6];
+        let targets = vec![2i64, 3, 1, 5, 6, 4];
+
+        let results = crate::louvain(
+            PgArray::from(sources.as_slice()),
+            PgArray::from(targets.as_slice()),
+        );
+
+        let rows: Vec<(i64, i64)> = results.collect();
+        let comms: std::collections::HashMap<i64, i64> = rows.into_iter().collect();
+        // Nodes in the same clique should share a community
+        assert_eq!(comms.get(&1), comms.get(&2), "1 and 2 same clique");
+        assert_eq!(comms.get(&1), comms.get(&3), "1 and 3 same clique");
+        assert_eq!(comms.get(&4), comms.get(&5), "4 and 5 same clique");
+        assert_eq!(comms.get(&4), comms.get(&6), "4 and 6 same clique");
+    }
 }

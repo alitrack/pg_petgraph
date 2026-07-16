@@ -12,7 +12,7 @@ env:
   CARGO_BUILD_JOBS: 1
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -47,7 +47,10 @@ jobs:
         run: cargo install cargo-pgrx --locked
 
       - name: Init pgrx
-        run: cargo pgrx init --pg${{ matrix.pg }} $(which pg_config)
+        run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
       - name: Build
         run: cargo build --profile ci --no-default-features --features pg${{ matrix.pg }}
+
+      - name: Test
+        run: cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}
