@@ -53,4 +53,4 @@ jobs:
         run: cargo build --profile ci --no-default-features --features pg${{ matrix.pg }}
 
       - name: Test
-        run: sudo env PATH="$PATH" cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}
+        run: cargo pgrx test pg${{ matrix.pg }} --runas $(whoami) --no-default-features --features pg${{ matrix.pg }}
