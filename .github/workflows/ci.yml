@@ -52,8 +52,5 @@ jobs:
       - name: Build
         run: cargo build --profile ci --no-default-features --features pg${{ matrix.pg }}
 
-      - name: Make PG extensions writable
-        run: sudo chown -R $(whoami) /usr/share/postgresql/${{ matrix.pg }}/extension
-
       - name: Test
-        run: cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}
+        run: sudo env PATH="$PATH" cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}
