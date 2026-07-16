@@ -9,7 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_RETRY: 10
-  CARGO_BUILD_JOBS: 1
 
 jobs:
   test:
@@ -49,8 +48,5 @@ jobs:
       - name: Init pgrx
         run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
-      - name: Build
-        run: cargo build --profile ci --no-default-features --features pg${{ matrix.pg }}
-
-      - name: Test
+      - name: Build & Test
         run: cargo pgrx test pg${{ matrix.pg }} --runas $(whoami) --no-default-features --features pg${{ matrix.pg }}
