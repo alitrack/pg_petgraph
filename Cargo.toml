@@ -7,7 +7,11 @@ license = "MIT"
 repository = "https://github.com/alitrack/pg_petgraph"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "pgrx_embed_pg_petgraph"
+path = "./src/bin/pgrx_embed.rs"
 
 [features]
 default = ["pg17"]
