@@ -1,0 +1,5 @@
+comment = 'PostgreSQL graph algorithm extension — PageRank, SCC, Betweenness Centrality, and more'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/pg_petgraph'
+relocatable = true
+superuser = true

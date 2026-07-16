@@ -31,26 +31,27 @@ jobs:
       - name: Install pgrx
         run: cargo pgrx --version 2>/dev/null || cargo install cargo-pgrx --locked
 
-      - name: Build PG16
+      - name: Install PG16 dev headers
         run: |
           sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           sudo apt-get update
-          sudo apt-get install -y postgresql-16 postgresql-server-dev-16
-          cargo pgrx init --pg16 /usr/lib/postgresql/16/bin/pg_config
-          cargo build --release --no-default-features --features pg16
-          mkdir -p artifacts
-          cp target/release/libpg_petgraph.so artifacts/pg_petgraph-pg16-v${{ steps.version.outputs.version }}-linux-x86_64.so
-          # Clean build artifacts to save space
-          cargo clean
-          rm -rf ~/.pgrx
+          sudo apt-get install -y postgresql-16 postgresql-server-dev-16 postgresql-17 postgresql-server-dev-17
 
-      - name: Build PG17
+      - name: Package PG16
         run: |
-          sudo apt-get install -y postgresql-17 postgresql-server-dev-17
+          cargo pgrx init --pg16 /usr/lib/postgresql/16/bin/pg_config
+          cargo pgrx package --pg-config /usr/lib/postgresql/16/bin/pg_config --no-default-features --features pg16
+          mv target/release/pg_petgraph-pg16 pg_petgraph-pg16
+          tar czf artifacts/pg_petgraph-pg16-v${{ steps.version.outputs.version }}-linux-x86_64.tar.gz pg_petgraph-pg16/
+          rm -rf ~/.pgrx && cargo clean
+
+      - name: Package PG17
+        run: |
           cargo pgrx init --pg17 /usr/lib/postgresql/17/bin/pg_config
-          cargo build --release --no-default-features --features pg17
-          cp target/release/libpg_petgraph.so artifacts/pg_petgraph-pg17-v${{ steps.version.outputs.version }}-linux-x86_64.so
+          cargo pgrx package --pg-config /usr/lib/postgresql/17/bin/pg_config --no-default-features --features pg17
+          mv target/release/pg_petgraph-pg17 pg_petgraph-pg17
+          tar czf artifacts/pg_petgraph-pg17-v${{ steps.version.outputs.version }}-linux-x86_64.tar.gz pg_petgraph-pg17/
 
       - name: Create release
         uses: softprops/action-gh-release@v2
