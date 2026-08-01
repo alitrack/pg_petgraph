@@ -49,4 +49,4 @@ jobs:
         run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
       - name: Build & Test
-        run: sudo cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}
+        run: sudo env "PATH=$PATH" cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}

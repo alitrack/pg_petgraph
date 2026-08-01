@@ -43,6 +43,7 @@ jobs:
           cargo pgrx init --pg16 /usr/lib/postgresql/16/bin/pg_config
           cargo pgrx package --pg-config /usr/lib/postgresql/16/bin/pg_config --no-default-features --features pg16
           mv target/release/pg_petgraph-pg16 pg_petgraph-pg16
+          mkdir -p artifacts
           tar czf artifacts/pg_petgraph-pg16-v${{ steps.version.outputs.version }}-linux-x86_64.tar.gz pg_petgraph-pg16/
           rm -rf ~/.pgrx && cargo clean
 
@@ -51,6 +52,7 @@ jobs:
           cargo pgrx init --pg17 /usr/lib/postgresql/17/bin/pg_config
           cargo pgrx package --pg-config /usr/lib/postgresql/17/bin/pg_config --no-default-features --features pg17
           mv target/release/pg_petgraph-pg17 pg_petgraph-pg17
+          mkdir -p artifacts
           tar czf artifacts/pg_petgraph-pg17-v${{ steps.version.outputs.version }}-linux-x86_64.tar.gz pg_petgraph-pg17/
 
       - name: Create release
