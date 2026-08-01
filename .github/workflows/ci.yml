@@ -48,5 +48,8 @@ jobs:
       - name: Init pgrx
         run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
+      - name: Prepare PG dirs for pgrx
+        run: sudo chown -R $USER /usr/share/postgresql/${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}
+
       - name: Build & Test
-        run: sudo env "PATH=$PATH" cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}
+        run: cargo pgrx test pg${{ matrix.pg }} --no-default-features --features pg${{ matrix.pg }}
