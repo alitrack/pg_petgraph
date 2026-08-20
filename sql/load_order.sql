@@ -35,7 +35,7 @@ STRICT LANGUAGE c AS 'MODULE_PATHNAME', 'dijkstra_wrapper';
 CREATE OR REPLACE FUNCTION toposort(
     sources bigint[],
     targets bigint[]
-) RETURNS TABLE(position integer, node_id bigint)
+) RETURNS TABLE("position" integer, node_id bigint)
 STRICT LANGUAGE c AS 'MODULE_PATHNAME', 'toposort_wrapper';
 
 -- Cycle detection
