@@ -13,7 +13,13 @@ pub mod pg_test {
     }
 }
 
-extension_sql_file!("../sql/load_order.sql", bootstrap);
+// NOTE: `sql/load_order.sql` used to be injected here with `extension_sql_file!(..., bootstrap)`.
+// It re-declared all ten functions by hand, which collided with the SQL that pgrx generates
+// from `#[pg_extern]`: the bootstrap script created them first, then the generated script ran
+// plain `CREATE FUNCTION` and aborted with
+//   ERROR SQLSTATE[42723]: function "betweenness" already exists with same argument types
+// so `CREATE EXTENSION pg_petgraph` never succeeded and every pg_test in CI failed.
+// pgrx already emits the full SQL API from the Rust signatures — the file was redundant.
 
 // ── Graph construction ──────────────────────────────────────────────
 
@@ -736,17 +742,57 @@ mod tests {
 
     #[pg_test]
     fn test_betweenness() {
-        let values: Vec<(i64,)> = Spi::connect(|c| {
+        // Directed chain 1→2→3: node 2 is the only intermediate node, so it must win.
+        let chain: Vec<(i64,)> = Spi::connect(|c| {
             c.select(
-                "SELECT node_id FROM betweenness(ARRAY[1,1,1], ARRAY[2,3,4]) ORDER BY centrality DESC",
+                "SELECT node_id FROM betweenness(ARRAY[1,2], ARRAY[2,3]) ORDER BY centrality DESC",
                 None,
                 &[],
             )
-            .map(|mut t| t.map(|row| (row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),)).collect())
+            .map(|t| t.map(|row| (row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),)).collect())
         })
         .unwrap();
-        let best = values.first().unwrap().0;
-        assert_eq!(best, 1, "star center should have highest betweenness");
+        assert_eq!(
+            chain.first().unwrap().0,
+            2,
+            "middle node of a directed chain should have highest betweenness"
+        );
+
+        // Star with edges both ways (undirected semantics): the center lies between every pair of leaves.
+        let star: Vec<(i64,)> = Spi::connect(|c| {
+            c.select(
+                "SELECT node_id FROM betweenness(ARRAY[1,1,1,2,3,4], ARRAY[2,3,4,1,1,1]) ORDER BY centrality DESC",
+                None,
+                &[],
+            )
+            .map(|t| t.map(|row| (row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),)).collect())
+        })
+        .unwrap();
+        assert_eq!(star.first().unwrap().0, 1, "star center should have highest betweenness");
+
+        // Out-only directed star (1→2,1→3,1→4): nothing lies *between* any pair,
+        // so every score must be 0. This is the directed reading of the same shape.
+        let out_only: Vec<(i64, f64)> = Spi::connect(|c| {
+            c.select(
+                "SELECT node_id, centrality FROM betweenness(ARRAY[1,1,1], ARRAY[2,3,4])",
+                None,
+                &[],
+            )
+            .map(|t| {
+                t.map(|row| {
+                    (
+                        row.get_by_name::<i64, _>("node_id").unwrap().unwrap(),
+                        row.get_by_name::<f64, _>("centrality").unwrap().unwrap(),
+                    )
+                })
+                .collect()
+            })
+        })
+        .unwrap();
+        assert!(
+            out_only.iter().all(|(_, c)| *c == 0.0),
+            "out-only directed star has no intermediate node, got {out_only:?}"
+        );
     }
 
     #[pg_test]
