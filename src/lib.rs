@@ -151,10 +151,17 @@ where
             for w in graph.neighbors(v) {
                 let dw = dist.get(&w).copied().unwrap_or(-1);
                 if dw < 0 {
+                    // First time w is reached: its shortest-path count starts from v's,
+                    // and v is w's first predecessor. (Reading `dw` again after the insert
+                    // would be needed here — using the stale value silently left sigma[w]
+                    // at 0 for every node, so the accumulation below divided by zero and
+                    // every betweenness score came out NaN.)
                     dist.insert(w, dv + 1);
                     queue.push_back(w);
-                }
-                if dw == dv + 1 {
+                    *sigma.get_mut(&w).unwrap() += sigma.get(&v).copied().unwrap_or(0);
+                    pred.get_mut(&w).unwrap().push(v);
+                } else if dw == dv + 1 {
+                    // w already reached at this depth: another shortest path goes through v.
                     *sigma.get_mut(&w).unwrap() += sigma.get(&v).copied().unwrap_or(0);
                     pred.get_mut(&w).unwrap().push(v);
                 }
