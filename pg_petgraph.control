@@ -1,4 +1,4 @@
-comment = 'PostgreSQL graph algorithm extension — PageRank, SCC, Betweenness Centrality, and more'
+comment = 'Graph algorithms for PostgreSQL — PageRank, betweenness, closeness, eigenvector, SCC, connected components, Dijkstra, topological sort, cycle detection, Louvain'
 default_version = '@CARGO_VERSION@'
 module_pathname = '$libdir/pg_petgraph'
 relocatable = true

@@ -651,9 +651,10 @@ fn louvain_community(graph: &DiGraph<i64, f64>) -> Vec<(NodeIndex, usize)> {
                     continue;
                 }
                 // ΔQ of moving i out of its community into `target_comm`:
-                //   (w_to_target − w_to_old)/m + k_i·(Σ_tot(old) − Σ_tot(target) + k_i)/(2m²)
+                //   (k_i→C − k_i→D)/m − k_i·(Σ_tot(C) − Σ_tot(D) + k_i)/(2m²)
+                // (Σ_tot(D) includes i itself when the move is evaluated.)
                 let delta = (w_to_target - w_to_old) / m
-                    + (ki * (sigma_old - comm_total[target_comm] + ki)) / (2.0 * m * m);
+                    - (ki * (comm_total[target_comm] - sigma_old + ki)) / (2.0 * m * m);
                 if delta > best_delta {
                     best_delta = delta;
                     best_comm = target_comm;
