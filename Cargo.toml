@@ -7,11 +7,10 @@ license = "MIT"
 repository = "https://github.com/alitrack/pg_petgraph"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "pgrx_embed_pg_petgraph"
-path = "./src/bin/pgrx_embed.rs"
+# pgrx 0.19 no longer needs an `rlib` crate type or a separate `pgrx_embed` bin —
+# `.cargo/config.toml`-free embedding is done by cargo-pgrx itself, and the
+# `pgrx::pgrx_embed!()` macro was removed from the crate.
+crate-type = ["cdylib"]
 
 [features]
 default = ["pg18"]
@@ -21,11 +20,14 @@ pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
 pg_test = []
 
 [dependencies]
-pgrx = { version = "0.19", default-features = false }
+pgrx = "=0.19.2"
 petgraph = "0.7"
 
 [dev-dependencies]
-pgrx-tests = { version = "0.19", default-features = false }
+pgrx-tests = "=0.19.2"
+
+[profile.dev]
+panic = "unwind"
 
 [profile.release]
 panic = "unwind"
