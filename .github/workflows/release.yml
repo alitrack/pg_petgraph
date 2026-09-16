@@ -29,14 +29,14 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install pgrx
-        run: cargo install cargo-pgrx --version 0.13.1 --locked --force
+        run: cargo install cargo-pgrx --version 0.19.2 --locked --force
 
-      - name: Install PG16 dev headers
+      - name: Install PG dev headers
         run: |
           sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           sudo apt-get update
-          sudo apt-get install -y postgresql-16 postgresql-server-dev-16 postgresql-17 postgresql-server-dev-17
+          sudo apt-get install -y postgresql-16 postgresql-server-dev-16 postgresql-17 postgresql-server-dev-17 postgresql-18 postgresql-server-dev-18
 
       - name: Package PG16
         run: |
@@ -54,6 +54,14 @@ jobs:
           mv target/release/pg_petgraph-pg17 pg_petgraph-pg17
           mkdir -p artifacts
           tar czf artifacts/pg_petgraph-pg17-v${{ steps.version.outputs.version }}-linux-x86_64.tar.gz pg_petgraph-pg17/
+
+      - name: Package PG18
+        run: |
+          cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
+          cargo pgrx package --pg-config /usr/lib/postgresql/18/bin/pg_config --no-default-features --features pg18
+          mv target/release/pg_petgraph-pg18 pg_petgraph-pg18
+          mkdir -p artifacts
+          tar czf artifacts/pg_petgraph-pg18-v${{ steps.version.outputs.version }}-linux-x86_64.tar.gz pg_petgraph-pg18/
 
       - name: Create release
         uses: softprops/action-gh-release@v2

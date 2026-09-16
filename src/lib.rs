@@ -1,7 +1,7 @@
 use petgraph::algo;
 use petgraph::graph::{DiGraph, NodeIndex};
 use pgrx::prelude::*;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pgrx::pg_module_magic!();
 
@@ -575,12 +575,6 @@ fn louvain_community(graph: &DiGraph<i64, f64>) -> Vec<(NodeIndex, usize)> {
         return Vec::new();
     }
 
-    let m: f64 = graph.edge_count() as f64;
-    if m < 1.0 {
-        // Each node in its own community
-        return graph.node_indices().map(|v| (v, v.index())).collect();
-    }
-
     let idx_to_node: Vec<NodeIndex> = graph.node_indices().collect();
     let node_to_idx: HashMap<NodeIndex, usize> = idx_to_node
         .iter()
@@ -588,19 +582,43 @@ fn louvain_community(graph: &DiGraph<i64, f64>) -> Vec<(NodeIndex, usize)> {
         .map(|(i, n)| (*n, i))
         .collect();
 
-    // Build adjacency: for each node, list of (neighbor_idx, weight)
-    let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+    // Louvain is defined on undirected graphs, so treat the edge list as undirected:
+    // each arc contributes to both endpoints, and a pair given in both directions is
+    // still one edge. (The previous version built a directed adjacency but used
+    // `edge_count()` as `m`, so the degrees summed to `m` instead of `2m` and the gain
+    // it computed was mis-scaled — nodes that should have merged never merged, and the
+    // two triangles in `test_louvain` came out in different communities.)
+    let mut edge_set: HashSet<(usize, usize)> = HashSet::new();
     for (i, node) in idx_to_node.iter().enumerate() {
         for neighbor in graph.neighbors(*node) {
-            if let Some(&ni) = node_to_idx.get(&neighbor) {
-                // Use 1.0 weight for unweighted; sum parallel edges
-                adj[i].push((ni, 1.0));
+            if let Some(&j) = node_to_idx.get(&neighbor) {
+                if i != j {
+                    edge_set.insert(if i < j { (i, j) } else { (j, i) });
+                }
             }
         }
     }
 
-    // Initialize each node in its own community
+    let m = edge_set.len() as f64;
+    if m < 1.0 {
+        // Each node in its own community
+        return graph.node_indices().map(|v| (v, v.index())).collect();
+    }
+
+    let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+    for &(u, v) in &edge_set {
+        adj[u].push((v, 1.0));
+        adj[v].push((u, 1.0));
+    }
+
+    let degree: Vec<f64> = adj
+        .iter()
+        .map(|nb| nb.iter().map(|&(_, w)| w).sum())
+        .collect();
+
+    // Every node starts in its own community; comm_total[c] = Σ degree of nodes in c.
     let mut community: Vec<usize> = (0..n).collect();
+    let mut comm_total: Vec<f64> = degree.clone();
     let mut improved = true;
     let max_passes = 20;
 
@@ -610,50 +628,41 @@ fn louvain_community(graph: &DiGraph<i64, f64>) -> Vec<(NodeIndex, usize)> {
         }
         improved = false;
 
-        // Compute total weight of each community
-        let mut comm_total: Vec<f64> = vec![0.0; n];
-        for (i, neighbors) in adj.iter().enumerate() {
-            for &(_j, w) in neighbors {
-                comm_total[community[i]] += w;
-            }
-        }
-
         for i in 0..n {
             let old_comm = community[i];
-
-            // Compute weight to each neighboring community
-            let mut comm_weight: HashMap<usize, f64> = HashMap::new();
-            let mut ki = 0.0f64;
-
-            for &(j, w) in &adj[i] {
-                ki += w;
-                *comm_weight.entry(community[j]).or_insert(0.0) += w;
-            }
-
+            let ki = degree[i];
             if ki == 0.0 {
                 continue;
             }
 
-            // Compute modularity gain for moving to each candidate community
+            // Weight from i into each neighbouring community (including its own).
+            let mut comm_weight: HashMap<usize, f64> = HashMap::new();
+            for &(j, w) in &adj[i] {
+                *comm_weight.entry(community[j]).or_insert(0.0) += w;
+            }
+            let w_to_old = comm_weight.get(&old_comm).copied().unwrap_or(0.0);
+            let sigma_old = comm_total[old_comm];
+
             let mut best_comm = old_comm;
             let mut best_delta = 0.0f64;
-            let k_i_over_2m = ki / (2.0 * m);
 
-            for (&target_comm, &w_to_comm) in &comm_weight {
+            for (&target_comm, &w_to_target) in &comm_weight {
                 if target_comm == old_comm {
                     continue;
                 }
-                let sigma_tot = comm_total[target_comm];
-                let delta = (w_to_comm / m) - 2.0 * (sigma_tot / (2.0 * m)) * k_i_over_2m * 2.0;
-
+                // ΔQ of moving i out of its community into `target_comm`:
+                //   (w_to_target − w_to_old)/m + k_i·(Σ_tot(old) − Σ_tot(target) + k_i)/(2m²)
+                let delta = (w_to_target - w_to_old) / m
+                    + (ki * (sigma_old - comm_total[target_comm] + ki)) / (2.0 * m * m);
                 if delta > best_delta {
                     best_delta = delta;
                     best_comm = target_comm;
                 }
             }
 
-            // Also consider: modularity loss from leaving old community
             if best_comm != old_comm {
+                comm_total[old_comm] -= ki;
+                comm_total[best_comm] += ki;
                 community[i] = best_comm;
                 improved = true;
             }

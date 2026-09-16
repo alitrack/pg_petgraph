@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        pg: [16, 17]
+        pg: [16, 17, 18]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +43,7 @@ jobs:
             rust-cache-${{ matrix.pg }}-
 
       - name: Install pgrx
-        run: cargo install cargo-pgrx --version 0.13.1 --locked --force
+        run: cargo install cargo-pgrx --version 0.19.2 --locked --force
 
       - name: Init pgrx
         run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config

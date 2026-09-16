@@ -85,11 +85,11 @@ Node identifiers are `bigint` and are preserved as-is on output; only edges are 
 
 ### From source
 
-Requires Rust 1.96+ and a PostgreSQL 15/16/17 development environment.
+Requires Rust 1.96+ and a PostgreSQL 16/17/18 development environment.
 
 ```bash
-cargo install cargo-pgrx --version 0.13.1 --locked
-cargo pgrx init --pg17 /usr/bin/pg_config
+cargo install cargo-pgrx --version 0.19.2 --locked
+cargo pgrx init --pg18 /usr/bin/pg_config
 
 git clone https://github.com/alitrack/pg_petgraph.git
 cd pg_petgraph
@@ -104,7 +104,7 @@ CREATE EXTENSION pg_petgraph;
 
 ### Supported versions
 
-Cargo features `pg15`, `pg16`, `pg17` (default: `pg17`). CI runs `cargo pgrx test` on **PostgreSQL 16 and 17**; the `pg15` feature is provided but not covered by CI.
+Cargo features `pg16`, `pg17`, `pg18` (default: `pg18`). CI runs `cargo pgrx test` on **PostgreSQL 16, 17 and 18** — one job per version.
 
 ## Scope and limits
 

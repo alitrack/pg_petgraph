@@ -80,11 +80,11 @@ flowchart LR
 
 ### 源码安装
 
-需要 Rust 1.96+ 以及 PostgreSQL 15/16/17 的开发环境。
+需要 Rust 1.96+ 以及 PostgreSQL 16/17/18 的开发环境。
 
 ```bash
-cargo install cargo-pgrx --version 0.13.1 --locked
-cargo pgrx init --pg17 /usr/bin/pg_config
+cargo install cargo-pgrx --version 0.19.2 --locked
+cargo pgrx init --pg18 /usr/bin/pg_config
 
 git clone https://github.com/alitrack/pg_petgraph.git
 cd pg_petgraph
@@ -99,7 +99,7 @@ CREATE EXTENSION pg_petgraph;
 
 ### 支持版本
 
-Cargo feature：`pg15` / `pg16` / `pg17`（默认 `pg17`）。CI 在 **PostgreSQL 16 与 17** 上跑 `cargo pgrx test`；`pg15` 提供了 feature，但不在 CI 覆盖范围内。
+Cargo feature：`pg16` / `pg17` / `pg18`（默认 `pg18`）。CI 在 **PostgreSQL 16 / 17 / 18** 上各跑一个 job 执行 `cargo pgrx test`。
 
 ## 边界与限制
 
