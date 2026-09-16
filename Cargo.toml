@@ -1,6 +1,6 @@
 [package]
 name = "pg_petgraph"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "PostgreSQL graph algorithm extension — 10 graph algorithms (PageRank, betweenness, closeness, eigenvector, SCC, connected components, Dijkstra, topological sort, cycle detection, Louvain) as plain SQL functions"
 license = "MIT"
