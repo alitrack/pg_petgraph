@@ -21,7 +21,8 @@ pg_test = []
 
 [dependencies]
 pgrx = "=0.19.2"
-petgraph = "0.7"
+petgraph = "0.8"
+rustworkx-core = "0.18.1"
 
 [dev-dependencies]
 pgrx-tests = "=0.19.2"
